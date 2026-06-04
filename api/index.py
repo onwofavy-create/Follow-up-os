@@ -67,7 +67,7 @@ HTML = r"""
 <style>
 :root{--bg:#050508;--surface:#0b0b14;--border:#1e1e30;--text:#d4d4d8;--muted:#71717a;--accent:#ff6b35;--success:#22c55e;--warn:#f59e0b;--danger:#ef4444}
 *{margin:0;padding:0;box-sizing:border-box}
-body <a href="https://hits.seeyoufarm.com"><img src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Ffollow-up-os-production.up.railway.app&count_bg=%23FF6B35&title_bg=%23050508&icon=&icon_color=%23E7E7E7&title=visitors&edge_flat=false"/></a>{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
+body {font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
 .container{max-width:900px;margin:0 auto}
 h1{font-size:1.5rem;color:#fff;text-align:center}h1 span{color:var(--accent)}
 p.sub{color:var(--muted);text-align:center;margin-bottom:20px;font-size:0.8rem}
