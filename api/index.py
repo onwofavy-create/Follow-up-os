@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import json, sqlite3
+import json, sqlite3, uvicorn
 from datetime import datetime, date
 from pathlib import Path
+import os
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -153,7 +154,7 @@ document.getElementById('summary').innerHTML='<div class="summary-card today"><d
 document.getElementById('todayCount').textContent=d.today;document.getElementById('activeCount').textContent=d.active;
 });
 }
-function renderLeads(leads,container,showStatus){
+function renderLeads(leads,container){
 let h='';if(!leads.length)h='<div class="empty">Nothing here. Great job!</div>';
 leads.forEach(l=>{
 let cls='';if(l.follow_up_date < new Date().toISOString().split('T')[0])cls='overdue';else if(l.follow_up_date === new Date().toISOString().split('T')[0])cls='today';
@@ -235,3 +236,7 @@ async def update_lead(lead_id: int, req: Request):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
