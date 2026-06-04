@@ -8,6 +8,14 @@ import urllib.request
 import urllib.parse
 
 app = FastAPI()
+@app.get("/debug")
+async def debug():
+    return {
+        "client_id_exists": bool(GOOGLE_CLIENT_ID),
+        "client_id_first10": GOOGLE_CLIENT_ID[:10] if GOOGLE_CLIENT_ID else "MISSING",
+        "secret_exists": bool(GOOGLE_CLIENT_SECRET),
+        "redirect": REDIRECT_URI
+    }
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 DB = Path("followup.db")
