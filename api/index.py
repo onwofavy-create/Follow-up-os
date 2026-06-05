@@ -215,6 +215,28 @@ ADMIN_HTML = r"""
 async def admin_page(request: Request):
     return RedirectResponse("/app")
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    conn = sqlite3.connect(str(DB))
+    conn.row_factory = sqlite3.Row
+    users = conn.execute("SELECT id, email, created, last_login FROM users ORDER BY last_login DESC").fetchall()
+    result = []
+    for u in users:
+        count = conn.execute("SELECT COUNT(*) FROM leads WHERE user_id=?", (u["id"],)).fetchone()[0]
+        result.append({"email": u["email"], "lead_count": count, "created": u["created"][:10], "last_login": u["last_login"][:16] if u["last_login"] else "Never"})
+    conn.close()
+
+    html = """<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dashboard</title>
+<style>body{font-family:system-ui;background:#050508;color:#d4d4d8;padding:40px}
+h1{color:#ff6b35}table{width:100%;border-collapse:collapse;margin-top:20px}
+th,td{padding:12px;text-align:left;border-bottom:1px solid #1e1e30}th{color:#ff6b35}
+.num{color:#22c55e;font-weight:700}</style></head><body>
+<h1>📊 Dashboard</h1><table><tr><th>Email</th><th>Leads</th><th>Signed Up</th><th>Last Login</th></tr>"""
+    for u in result:
+        html += f"<tr><td>{u['email']}</td><td class='num'>{u['lead_count']}</td><td>{u['created']}</td><td>{u['last_login']}</td></tr>"
+    html += "</table></body></html>"
+    return html
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     if get_user(request): return RedirectResponse("/app")
