@@ -227,6 +227,7 @@ async def signup_page(): return SIGNUP_PAGE
 @app.get("/app", response_class=HTMLResponse)
 async def app_page(): return APP_HTML
 
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
     if request.cookies.get("admin_token") == ADMIN_PASSWORD:
