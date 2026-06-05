@@ -211,9 +211,8 @@ ADMIN_HTML = r"""
 <style>body{font-family:system-ui;background:#050508;color:#d4d4d8;padding:40px}table{width:100%;border-collapse:collapse}th,td{padding:12px;text-align:left;border-bottom:1px solid #1e1e30}th{color:#ff6b35}</style></head><body>
 <h1>Admin Panel</h1><table><tr><th>Email</th><th>Leads</th><th>Signed Up</th><th>Last Login</th></tr><tbody id="users"></tbody></table>
 <script>fetch('/api/admin/users').then(r=>r.json()).then(users=>{let h='';users.forEach(u=>{h+=`<tr><td>${u.email}</td><td>${u.lead_count}</td><td>${u.created}</td><td>${u.last_login}</td></tr>`});document.getElementById('users').innerHTML=h})</script></body></html>"""
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
+@app.get("/admin")
+async def admin_page(request: Request):
     return RedirectResponse("/app")
 
 @app.get("/login", response_class=HTMLResponse)
