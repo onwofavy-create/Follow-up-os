@@ -19,8 +19,8 @@ async def debug():
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 DB = Path("followup.db")
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID") or os.environ.get("google_client_id", "")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET") or os.environ.get("google_client_secret", "")
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 SITE_URL = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "follow-up-os-production.up.railway.app")
 REDIRECT_URI = f"https://{SITE_URL}/auth/google/callback"
 
