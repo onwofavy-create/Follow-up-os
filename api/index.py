@@ -221,8 +221,8 @@ DASHBOARD_HTML = r"""
 
 <h1>📊 Dashboard</h1><table><tr><th>Email</th><th>Leads</th><th>Signed Up</th><th>Last Login</th></tr><tbody id="users"></tbody></table>
 <script>fetch('/api/dashboard').then(r=>r.json()).then(users=>{let h='';users.forEach(u=>{h+=`<tr><td>${u.email}</td><td class='num'>${u.lead_count}</td><td>${u.created}</td><td>${u.last_login}</td></tr>`});document.getElementById('users').innerHTML=h})</script></body></html>"""
+#ROUTES
 
-── ROUTES ──
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
