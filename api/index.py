@@ -214,9 +214,7 @@ ADMIN_HTML = r"""
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    user = get_user(request)
-    if user: return RedirectResponse("/app")
-    return RedirectResponse("/login")
+    return RedirectResponse("/app")
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
