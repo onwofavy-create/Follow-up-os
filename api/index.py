@@ -62,48 +62,6 @@ def get_active_leads(user_id):
 def get_lost_leads(user_id):
     return run_query("SELECT * FROM leads WHERE user_id=%s AND status IN ('lost','closed') ORDER BY updated DESC LIMIT 30", (user_id,))
 
-# HTML files loaded from separate .html files to avoid escaping issues
-LANDING_HTML = open("landing.html", "r", encoding="utf-8").read() if os.path.exists("landing.html") else "<h1>Landing page</h1>"
-RESURRECT_HTML = open("resurrect.html", "r", encoding="utf-8").read() if os.path.exists("resurrect.html") else "<h1>Resurrect</h1>"
-LOGIN_PAGE = open("login.html", "r", encoding="utf-8").read() if os.path.exists("login.html") else "<h1>Login</h1>"
-SIGNUP_PAGE = open("signup.html", "r", encoding="utf-8").read() if os.path.exists("signup.html") else "<h1>Signup</h1>"
-APP_HTML = open("app.html", "r", encoding="utf-8").read() if os.path.exists("app.html") else "<h1>App</h1>"
-COS_HTML = open("cos.html", "r", encoding="utf-8").read() if os.path.exists("cos.html") else "<h1>Cost of Silence</h1>"
-
-@app.get("/")
-async def landing(): return HTMLResponse(LANDING_HTML)
-
-@app.get("/resurrect")
-async def resurrect_page(): return HTMLResponse(RESURRECT_HTML)
-
-@app.get("/login")
-async def login_page(request: Request):
-    if get_user(request): return RedirectResponse("/app")
-    return HTMLResponse(LOGIN_PAGE)
-
-@app.get("/signup")
-async def signup_page(): return HTMLResponse(SIGNUP_PAGE)
-
-@app.get("/app")
-async def app_page(): return HTMLResponse(APP_HTML)
-
-@app.get("/cost-of-silence")
-async def cos_page(): return HTMLResponse(COS_HTML)
-
-@app.post("/api/resurrect")
-async def resurrect_api(request: Request):
-    data = await request.json()
-    name = data.get("name","").strip()
-    their_name = data.get("theirName","").strip()
-    last_msg = data.get("lastMsg","").strip()
-    context = data.get("context","").strip()
-    days = data.get("days","7")
-    greeting = f"Hey {their_name}" if their_name else "Hey"
-    ctx = f"I was reviewing our conversation about {context}" if context else "I was going through old messages"
-    urgency = "I realize I should have followed up sooner" if int(days) > 5 else "I wanted to follow up"
-    msg = f"{greeting},\n\n{urgency}. {ctx} and {last_msg[:80] if last_msg else 'our last chat'} came to mind.\n\nNo pressure at all — if you're still interested, I'd love to pick this back up. If things have changed, no worries either.\n\n{'- ' + name if name else '- [Your Name]'}"
-    return {"message": msg}
-
 @app.get("/api/public/cost-of-silence")
 async def cost_of_silence():
     total = run_query("SELECT SUM(deal_value) FROM leads WHERE follow_up_date < CURRENT_DATE AND status NOT IN ('lost','closed')")
@@ -221,13 +179,21 @@ async def import_whatsapp(file: UploadFile = File(...)):
             msg = match.group(3).strip()
             if name and name not in ["You", "System"] and not name.startswith("+"):
                 contacts.append({"name": name, "lastMessage": msg[:100]})
-    seen = set()
-    unique = []
+    seen = set(); unique = []
     for c in contacts:
-        if c["name"] not in seen:
-            seen.add(c["name"])
-            unique.append(c)
+        if c["name"] not in seen: seen.add(c["name"]); unique.append(c)
     return {"contacts": unique[:30]}
+
+@app.post("/api/resurrect")
+async def resurrect_api(request: Request):
+    data = await request.json()
+    name = data.get("name","").strip(); their_name = data.get("theirName","").strip()
+    last_msg = data.get("lastMsg","").strip(); context = data.get("context","").strip()
+    days = data.get("days","7")
+    greeting = f"Hey {their_name}" if their_name else "Hey"
+    ctx = f"I was reviewing our conversation about {context}" if context else "I was going through old messages"
+    urgency = "I realize I should have followed up sooner" if int(days) > 5 else "I wanted to follow up"
+    return {"message": f"{greeting},\n\n{urgency}. {ctx} and {last_msg[:80] if last_msg else 'our last chat'} came to mind.\n\nNo pressure at all — if you're still interested, I'd love to pick this back up. If things have changed, no worries either.\n\n{'- ' + name if name else '- [Your Name]'}"}
 
 @app.get("/dashboard")
 async def dashboard_page(request: Request):
