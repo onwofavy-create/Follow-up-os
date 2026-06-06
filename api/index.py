@@ -62,34 +62,77 @@ def get_active_leads(user_id):
 def get_lost_leads(user_id):
     return run_query("SELECT * FROM leads WHERE user_id=%s AND status IN ('lost','closed') ORDER BY updated DESC LIMIT 30", (user_id,))
 
-# ── ROUTES ──
+# ── SIMPLE WORKING PAGE ──
+PAGE = """<!DOCTYPE html>
+<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>
+<title>Follow-Up OS</title>
+<style>
+:root{--bg:#06060e;--surface:#0c0c1a;--border:#1a1a35;--text:#e0e0e8;--muted:#7a7a90;--blue:#3b82f6;--orange:#ff6b35;--success:#22c55e;--warn:#f59e0b;--danger:#ef4444}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
+.container{max-width:900px;margin:0 auto}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.topbar h1{font-size:1.3rem;color:#fff}.topbar h1 span{color:var(--blue)}
+.logout{color:var(--muted);text-decoration:none;font-size:.8rem}
+.save-banner{background:var(--surface);border:1px solid var(--warn);border-radius:12px;padding:14px;margin-bottom:20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
+.save-banner span{color:var(--warn);font-weight:600;font-size:.8rem}
+.save-banner input{background:var(--bg);border:1px solid var(--border);color:#fff;padding:8px 12px;border-radius:8px;font-size:.8rem}
+.btn{background:var(--blue);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:.8rem}
+.btn-orange{background:var(--orange)}.btn-success{background:var(--success)}.btn-danger{background:var(--danger)}.btn-warn{background:var(--warn);color:#000}
+.btn-sm{padding:6px 12px;font-size:.7rem;border-radius:6px;border:none;cursor:pointer;font-weight:600}
+.summary{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.summary-card{flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;text-align:center}
+.summary-card .num{font-size:2rem;font-weight:800}.summary-card .lbl{color:var(--muted);font-size:.65rem;text-transform:uppercase}
+.tabs{display:flex;gap:4px;margin-bottom:20px}.tab{flex:1;text-align:center;padding:10px;border-radius:8px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-weight:600;font-size:.75rem}.tab.active{background:var(--blue);color:#fff}
+.panel{display:none}.panel.active{display:block}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+.card h3{color:var(--muted);font-size:.7rem;text-transform:uppercase;margin-bottom:14px}
+input,textarea,select{width:100%;background:var(--bg);border:1px solid var(--border);color:#fff;padding:10px;border-radius:8px;margin-bottom:10px;font-size:.85rem;font-family:inherit;outline:none}
+label{display:block;color:var(--muted);font-size:.65rem;text-transform:uppercase;margin-bottom:3px}
+.quick-chips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
+.chip{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:14px;font-size:.7rem;cursor:pointer}.chip:hover{border-color:var(--blue);color:var(--blue)}
+.lead-row{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin:6px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.lead-row .name{color:#fff;font-weight:600}.lead-row .detail{color:var(--muted);font-size:.7rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:.6rem;font-weight:700}
+.badge.hot{background:#22c55e20;color:#22c55e}.badge.warm{background:#f59e0b20;color:#f59e0b}.badge.cold{background:#ef444420;color:#ef4444}
+.overdue-row{border-left:3px solid var(--danger)}.today-row{border-left:3px solid var(--blue)}
+.empty{text-align:center;color:var(--muted);padding:30px}
+.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:99;align-items:center;justify-content:center}
+.modal.active{display:flex}.modal-content{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;max-width:420px;width:90%;text-align:center}
+</style></head><body>
+<div class='container'>
+<div class='topbar'><h1><span>Follow-Up</span> OS</h1>
+<div><span id='userEmail' style='color:var(--muted);font-size:.75rem'></span><a href='/api/logout' class='logout' id='logoutLink' style='display:none'>Logout</a></div></div>
+<div id='saveBanner' class='save-banner' style='display:none'><span>⚠️ Your leads will be lost.</span><input type='email' id='bannerEmail' placeholder='Email'><input type='password' id='bannerPassword' placeholder='Password'><button class='btn' onclick='saveAccount()'>Save</button></div>
+<div class='summary' id='summary'></div>
+<div class='tabs'><div class='tab active' onclick='switchTab(\"add\")'>➕ Add</div><div class='tab' onclick='switchTab(\"today\")'>🔥 Today</div><div class='tab' onclick='switchTab(\"active\")'>📊 Active</div><div class='tab' onclick='switchTab(\"lost\")'>📁 Closed</div></div>
+<div id='add' class='panel active'><div class='card'><h3>New Lead</h3><div class='quick-chips'><button class='chip' onclick='setSource(\"WhatsApp\")'>WhatsApp</button><button class='chip' onclick='setSource(\"Instagram\")'>Instagram</button><button class='chip' onclick='setSource(\"Facebook\")'>Facebook</button><button class='chip' onclick='setSource(\"Email\")'>Email</button><button class='chip' onclick='setSource(\"Phone\")'>Phone</button><button class='chip' onclick='setSource(\"Other\")'>Other</button></div><label>Name *</label><input id='l_name'><label>Source</label><input id='l_source'><label>Note</label><input id='l_note'><label>Value (₦)</label><input id='l_value' type='number'><label>Status</label><select id='l_status'><option value='hot'>Hot</option><option value='warm' selected>Warm</option><option value='cold'>Cold</option></select><label>Follow-up Date</label><input id='l_date' type='date'><button class='btn' onclick='addLead()' style='width:100%'>Save Lead</button></div></div>
+<div id='today' class='panel'><div class='card'><h3>Today</h3><div id='todayList'></div></div></div>
+<div id='active' class='panel'><div class='card'><h3>Active</h3><div id='activeList'></div></div></div>
+<div id='lost' class='panel'><div class='card'><h3>Closed</h3><div id='lostList'></div></div></div></div>
+<script>
+var current='add',isLoggedIn=false;
+fetch('/api/me').then(r=>r.json()).then(function(d){if(d.email){isLoggedIn=true;document.getElementById('userEmail').textContent=d.email;document.getElementById('logoutLink').style.display='inline';document.getElementById('saveBanner').style.display='none'}else{document.getElementById('saveBanner').style.display='flex'}loadSummary()});
+function switchTab(t){current=t;document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')});document.querySelectorAll('.panel').forEach(function(x){x.classList.remove('active')});document.getElementById(t).classList.add('active');if(t==='today')loadToday();if(t==='active')loadActive();if(t==='lost')loadLost();loadSummary()}
+function loadSummary(){fetch('/api/summary').then(r=>r.json()).then(function(d){document.getElementById('summary').innerHTML='<div class=\"summary-card\"><div class=\"num\" style=\"color:var(--blue)\">'+d.today+'</div><div class=\"lbl\">Due Today</div></div><div class=\"summary-card\"><div class=\"num\" style=\"color:var(--danger)\">'+d.overdue+'</div><div class=\"lbl\">Overdue</div></div><div class=\"summary-card\"><div class=\"num\" style=\"color:var(--success)\">'+d.active+'</div><div class=\"lbl\">Active</div></div>'})}
+function renderLeads(leads,container){var h='';if(!leads.length)h='<div class=\"empty\">Nothing here.</div>';leads.forEach(function(l){var cls=l.follow_up_date<new Date().toISOString().split('T')[0]?'overdue-row':(l.follow_up_date===new Date().toISOString().split('T')[0]?'today-row':'');h+='<div class=\"lead-row '+cls+'\"><div><div class=\"name\">'+l.name+' <span class=\"badge '+l.status+'\">'+l.status.toUpperCase()+'</span></div><div class=\"detail\">'+(l.deal_value||0).toLocaleString()+' | '+l.follow_up_date+' | '+l.note+'</div></div><div style=\"display:flex;gap:4px\">';if(l.status!=='lost'&&l.status!=='closed'){h+='<button class=\"btn-sm btn-success\" onclick=\"updateStatus('+l.id+',&quot;closed&quot;)\">Won</button>';h+='<button class=\"btn-sm btn-danger\" onclick=\"updateStatus('+l.id+',&quot;lost&quot;)\">Lost</button>';h+='<button class=\"btn-sm btn-warn\" onclick=\"followedUp('+l.id+')\">Done</button>'}h+='</div></div>'});document.getElementById(container).innerHTML=h}
+function loadToday(){fetch('/api/leads/today').then(r=>r.json()).then(function(d){renderLeads(d,'todayList')})}
+function loadActive(){fetch('/api/leads/active').then(r=>r.json()).then(function(d){renderLeads(d,'activeList')})}
+function loadLost(){fetch('/api/leads/lost').then(r=>r.json()).then(function(d){renderLeads(d,'lostList')})}
+function setSource(s){document.getElementById('l_source').value=s}
+async function saveAccount(){var e=document.getElementById('bannerEmail').value,p=document.getElementById('bannerPassword').value;if(!e||p.length<6)return;var r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})});if(r.ok)location.reload()}
+async function addLead(){var btn=document.querySelector('#add .btn'),orig=btn.innerHTML;btn.disabled=true;btn.innerHTML='Saving...';await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('l_name').value,source:document.getElementById('l_source').value,note:document.getElementById('l_note').value,deal_value:document.getElementById('l_value').value,status:document.getElementById('l_status').value,follow_up_date:document.getElementById('l_date').value})});document.getElementById('l_name').value='';document.getElementById('l_note').value='';document.getElementById('l_value').value='';btn.disabled=false;btn.innerHTML=orig;loadSummary();if(!isLoggedIn)document.getElementById('saveBanner').style.display='flex'}
+async function updateStatus(id,s){await fetch('/api/leads/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:s})});if(current==='today')loadToday();else if(current==='active')loadActive();else loadLost();loadSummary()}
+async function followedUp(id){var d=new Date();d.setDate(d.getDate()+3);await fetch('/api/leads/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({follow_up_date:d.toISOString().split('T')[0]})});if(current==='today')loadToday();else loadActive();loadSummary()}
+document.getElementById('l_date').value=new Date().toISOString().split('T')[0];
+loadSummary();
+</script></body></html>"""
 
-@app.get("/")
-async def home(): return RedirectResponse("/app")
+@app.get("/", response_class=HTMLResponse)
+async def home(): return PAGE
 
 @app.get("/app", response_class=HTMLResponse)
-async def app_page(request: Request):
-    html = open("app.html", "r", encoding="utf-8").read()
-    return html
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    if get_user(request): return RedirectResponse("/app")
-    return """<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Login</title><style>:root{--bg:#06060e;--surface:#0c0c1a;--border:#1a1a35;--blue:#3b82f6}*{margin:0;padding:0}body{font-family:system-ui;background:var(--bg);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center}.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:100%;max-width:380px;text-align:center}h1{font-size:1.5rem;margin-bottom:4px}h1 span{color:var(--blue)}p{color:#7a7a90;font-size:.85rem;margin-bottom:24px}input{width:100%;background:var(--bg);border:1px solid var(--border);color:#fff;padding:12px;border-radius:10px;font-size:.9rem;margin-bottom:12px;outline:none}input:focus{border-color:var(--blue)}.btn{background:var(--blue);color:#fff;border:none;padding:13px;border-radius:10px;font-weight:700;cursor:pointer;width:100%}.error{color:#ef4444;font-size:.8rem;margin-bottom:12px}a{color:#7a7a90;font-size:.8rem;text-decoration:none;display:block;margin-top:12px}</style></head><body><div class='card'><h1><span>Follow-Up</span> OS</h1><p>Login to see your leads</p><div id='error' class='error'></div><form onsubmit='login(event)'><input type='email' id='email' placeholder='Email' required><input type='password' id='password' placeholder='Password' required><button class='btn'>Login</button></form><a href='/signup'>Create account</a></div><script>async function login(e){e.preventDefault();var r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value})});if(r.ok)location.href='/app';else{var d=await r.json();document.getElementById('error').textContent=d.error}}</script></body></html>"""
-
-@app.get("/signup", response_class=HTMLResponse)
-async def signup_page():
-    return """<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Sign Up</title><style>:root{--bg:#06060e;--surface:#0c0c1a;--border:#1a1a35;--blue:#3b82f6}*{margin:0;padding:0}body{font-family:system-ui;background:var(--bg);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center}.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:100%;max-width:380px;text-align:center}h1{font-size:1.5rem}h1 span{color:var(--blue)}p{color:#7a7a90;font-size:.85rem;margin-bottom:24px}input{width:100%;background:var(--bg);border:1px solid var(--border);color:#fff;padding:12px;border-radius:10px;font-size:.9rem;margin-bottom:12px;outline:none}input:focus{border-color:var(--blue)}.btn{background:var(--blue);color:#fff;border:none;padding:13px;border-radius:10px;font-weight:700;cursor:pointer;width:100%}.error{color:#ef4444;font-size:.8rem;margin-bottom:12px}a{color:#7a7a90;font-size:.8rem;text-decoration:none;display:block;margin-top:12px}</style></head><body><div class='card'><h1><span>Follow-Up</span> OS</h1><p>Create your free account</p><div id='error' class='error'></div><form onsubmit='signup(event)'><input type='email' id='email' placeholder='Email' required><input type='password' id='password' placeholder='Password (6+ chars)' minlength='6' required><button class='btn'>Create Account</button></form><a href='/login'>Already have an account?</a></div><script>async function signup(e){e.preventDefault();var r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value})});if(r.ok)location.href='/app';else{var d=await r.json();document.getElementById('error').textContent=d.error}}</script></body></html>"""
-
-@app.get("/cost-of-silence", response_class=HTMLResponse)
-async def cos_page():
-    return """<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Cost of Silence</title><style>:root{--bg:#06060e;--surface:#0c0c1a;--border:#1a1a35;--blue:#3b82f6;--danger:#ef4444}*{margin:0;padding:0}body{font-family:system-ui;background:var(--bg);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}.num{font-size:4rem;font-weight:800;color:var(--danger)}.lbl{color:#7a7a90;font-size:1rem;margin-bottom:24px}.stat{display:inline-block;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 24px;margin:8px}.stat .val{font-size:1.5rem;font-weight:700;color:var(--blue)}.stat .lbl{font-size:.65rem;color:#7a7a90;text-transform:uppercase}.btn{display:inline-block;background:var(--blue);color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;margin-top:20px}</style></head><body><div><div class='num' id='total'>...</div><div class='lbl'>in unclosed deals dying in DMs right now.</div><div class='stat'><div class='val' id='daily'>...</div><div class='lbl'>Daily Loss</div></div><div class='stat'><div class='val' id='count'>...</div><div class='lbl'>Overdue</div></div><br><a href='/app' class='btn'>Stop Losing Money - Free</a></div><script>fetch('/api/public/cost-of-silence').then(r=>r.json()).then(d=>{document.getElementById('total').textContent='₦'+d.total_at_risk.toLocaleString();document.getElementById('daily').textContent='₦'+d.daily_loss_estimate.toLocaleString();document.getElementById('count').textContent=d.overdue_deals})</script></body></html>"""
-
-@app.get("/resurrect", response_class=HTMLResponse)
-async def resurrect_page():
-    return """<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Resurrect a Lead</title><style>:root{--bg:#06060e;--surface:#0c0c1a;--border:#1a1a35;--blue:#3b82f6}*{margin:0;padding:0}body{font-family:system-ui;background:var(--bg);color:#fff;min-height:100vh;padding:40px 20px}.container{max-width:600px;margin:0 auto}h1{text-align:center;font-size:1.8rem;margin-bottom:4px}h1 span{color:var(--blue)}p.sub{text-align:center;color:#7a7a90;margin-bottom:28px}label{display:block;color:#7a7a90;font-size:.65rem;text-transform:uppercase;margin-bottom:4px}input,textarea{width:100%;background:var(--surface);border:1px solid var(--border);color:#fff;padding:12px;border-radius:10px;font-size:.9rem;margin-bottom:14px;outline:none;font-family:inherit}input:focus,textarea:focus{border-color:var(--blue)}textarea{resize:vertical;min-height:80px}.btn{background:var(--blue);color:#fff;border:none;padding:14px;border-radius:10px;font-weight:700;cursor:pointer;width:100%}.result{background:var(--surface);border:1px solid #22c55e40;border-radius:12px;padding:20px;margin-top:16px;display:none}.result.active{display:block}.msg{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:.85rem;line-height:1.6;margin:8px 0;white-space:pre-wrap}.copy-btn{background:#22c55e;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600}.cta{margin-top:16px;text-align:center;color:#7a7a90;font-size:.8rem}.cta a{color:var(--blue)}</style></head><body><div class='container'><h1><span>Resurrect</span> a Dead Lead</h1><p class='sub'>Paste the conversation. Get the exact message to send.</p><label>Your Name</label><input id='r_name'><label>Their Name</label><input id='r_theirName'><label>Last Message</label><textarea id='r_lastMsg'></textarea><label>What was it about?</label><input id='r_context'><label>Days Since Contact</label><input id='r_days' type='number' value='7'><button class='btn' onclick='resurrect()'>Generate Message</button><div class='result' id='result'><p style='color:#22c55e;font-weight:700;margin-bottom:8px'>Your Message</p><div class='msg' id='genMsg'></div><button class='copy-btn' onclick='copyMsg()'>📋 Copy</button></div><div class='cta'>Want to never lose a lead again? <a href='/app'>Try Follow-Up OS free →</a></div></div><script>async function resurrect(){var btn=document.querySelector('.btn');var orig=btn.innerHTML;btn.disabled=true;btn.innerHTML='Generating...';var r=await fetch('/api/resurrect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('r_name').value,theirName:document.getElementById('r_theirName').value,lastMsg:document.getElementById('r_lastMsg').value,context:document.getElementById('r_context').value,days:document.getElementById('r_days').value})});var d=await r.json();document.getElementById('genMsg').textContent=d.message;document.getElementById('result').classList.add('active');btn.disabled=false;btn.innerHTML=orig}function copyMsg(){navigator.clipboard.writeText(document.getElementById('genMsg').textContent);alert('Copied!')}</script></body></html>"""
-
-# ── API ROUTES ──
+async def app(): return PAGE
 
 @app.get("/api/public/cost-of-silence")
 async def cost_of_silence():
@@ -135,7 +178,7 @@ async def login(request: Request):
 
 @app.get("/api/logout")
 async def logout():
-    resp = RedirectResponse("/login"); resp.delete_cookie("token"); return resp
+    resp = RedirectResponse("/"); resp.delete_cookie("token"); return resp
 
 @app.get("/api/summary")
 async def summary(request: Request):
@@ -178,51 +221,6 @@ async def update_lead(lead_id: int, request: Request):
             elif last and (date.today() - date.fromisoformat(last)).days == 1: run_query("UPDATE users SET streak=streak+1, last_streak_date=%s WHERE id=%s", (today_str, uid))
             else: run_query("UPDATE users SET streak=1, last_streak_date=%s WHERE id=%s", (today_str, uid))
     return {"ok": True}
-
-@app.post("/api/leads/{lead_id}/nudge")
-async def toggle_nudge(lead_id: int, request: Request):
-    user = get_user(request); uid = user["id"] if user else 0
-    rows = run_query("SELECT nudge_enabled FROM leads WHERE id=%s AND user_id=%s", (lead_id, uid))
-    if rows: run_query("UPDATE leads SET nudge_enabled=%s WHERE id=%s AND user_id=%s", (0 if rows[0]["nudge_enabled"] else 1, lead_id, uid))
-    return {"ok": True}
-
-@app.get("/api/leads/{lead_id}/reminder")
-async def reminder(lead_id: int, request: Request):
-    user = get_user(request); uid = user["id"] if user else 0
-    rows = run_query("SELECT * FROM leads WHERE id=%s AND user_id=%s", (lead_id, uid))
-    if not rows: return JSONResponse({"error": "Not found"}, status_code=404)
-    lead = rows[0]; now = datetime.now()
-    ics = f"BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Follow-Up OS//EN\nBEGIN:VEVENT\nDTSTART:{now.strftime('%Y%m%dT%H%M%S')}\nDTEND:{(now+timedelta(hours=1)).strftime('%Y%m%dT%H%M%S')}\nSUMMARY:Follow up with {lead['name']}\nBEGIN:VALARM\nTRIGGER:-PT15M\nACTION:DISPLAY\nDESCRIPTION:Time to follow up with {lead['name']}\nEND:VALARM\nEND:VEVENT\nEND:VCALENDAR"
-    return StreamingResponse(io.BytesIO(ics.encode()), media_type="text/calendar", headers={"Content-Disposition": f"attachment; filename=followup_{lead['name']}.ics"})
-
-@app.post("/api/import/whatsapp")
-async def import_whatsapp(file: UploadFile = File(...)):
-    content = (await file.read()).decode("utf-8", errors="ignore")
-    contacts = []
-    for line in content.split("\n"):
-        line = line.strip()
-        if not line: continue
-        match = re.match(r'(\d+/\d+/\d+,\s+\d+:\d+)\s+-\s+(.+?):\s+(.+)', line)
-        if match:
-            name = match.group(2).strip()
-            msg = match.group(3).strip()
-            if name and name not in ["You", "System"] and not name.startswith("+"):
-                contacts.append({"name": name, "lastMessage": msg[:100]})
-    seen = set(); unique = []
-    for c in contacts:
-        if c["name"] not in seen: seen.add(c["name"]); unique.append(c)
-    return {"contacts": unique[:30]}
-
-@app.post("/api/resurrect")
-async def resurrect_api(request: Request):
-    data = await request.json()
-    name = data.get("name","").strip(); their_name = data.get("theirName","").strip()
-    last_msg = data.get("lastMsg","").strip(); context = data.get("context","").strip()
-    days = data.get("days","7")
-    greeting = f"Hey {their_name}" if their_name else "Hey"
-    ctx = f"I was reviewing our conversation about {context}" if context else "I was going through old messages"
-    urgency = "I realize I should have followed up sooner" if int(days) > 5 else "I wanted to follow up"
-    return {"message": f"{greeting},\n\n{urgency}. {ctx} and {last_msg[:80] if last_msg else 'our last chat'} came to mind.\n\nNo pressure at all — if you're still interested, I'd love to pick this back up. If things have changed, no worries either.\n\n{'- ' + name if name else '- [Your Name]'}"}
 
 @app.get("/dashboard")
 async def dashboard_page(request: Request):
