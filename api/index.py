@@ -10,35 +10,35 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "followup2024")
 
-def get_db():
+def connect_db():
     return psycopg2.connect(DATABASE_URL) if DATABASE_URL else None
 
-def init_db():
+def setup_db():
     if not DATABASE_URL: return
-    conn = get_db(); cur = conn.cursor()
+    conn = connect_db(); cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, token TEXT, streak INTEGER DEFAULT 0, last_streak_date TEXT, created TEXT, last_login TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS leads (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 0, session_id TEXT DEFAULT '0', name TEXT NOT NULL, source TEXT, note TEXT, deal_value INTEGER DEFAULT 0, status TEXT DEFAULT 'warm', follow_up_date TEXT, last_contacted TEXT, nudge_enabled INTEGER DEFAULT 0, created TEXT, updated TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS history (id SERIAL PRIMARY KEY, lead_id INTEGER, user_id INTEGER, action TEXT, note TEXT, created TEXT)")
     conn.commit(); conn.close()
 
-init_db()
+setup_db()
 
-def hash_password(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-def check_password(password, hashed): return bcrypt.checkpw(password.encode(), hashed.encode())
+def hash_pw(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+def check_pw(password, hashed): return bcrypt.checkpw(password.encode(), hashed.encode())
 
-def get_user(request: Request):
+def fetch_user(request: Request):
     token = request.cookies.get("token")
     if not token or not DATABASE_URL: return None
-    conn = get_db(); cur = conn.cursor()
+    conn = connect_db(); cur = conn.cursor()
     cur.execute("SELECT * FROM users WHERE token=%s", (token,))
     row = cur.fetchone()
     conn.close()
     if row: return dict(zip(["id","email","password","token","streak","last_streak_date","created","last_login"], row))
     return None
 
-def run_query(query, params=()):
+def execute_query(query, params=()):
     if not DATABASE_URL: return []
-    conn = get_db(); cur = conn.cursor()
+    conn = connect_db(); cur = conn.cursor()
     cur.execute(query, params)
     if query.strip().upper().startswith("SELECT"):
         rows = cur.fetchall()
@@ -48,22 +48,21 @@ def run_query(query, params=()):
     conn.commit(); conn.close()
     return []
 
-def get_today_leads(user_id):
+def today_leads(user_id):
     today = date.today().isoformat()
-    return run_query("SELECT * FROM leads WHERE user_id=%s AND follow_up_date <= %s AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id, today))
+    return execute_query("SELECT * FROM leads WHERE user_id=%s AND follow_up_date <= %s AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id, today))
 
-def get_overdue_leads(user_id):
+def overdue_leads(user_id):
     today = date.today().isoformat()
-    return run_query("SELECT * FROM leads WHERE user_id=%s AND follow_up_date < %s AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id, today))
+    return execute_query("SELECT * FROM leads WHERE user_id=%s AND follow_up_date < %s AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id, today))
 
-def get_active_leads(user_id):
-    return run_query("SELECT * FROM leads WHERE user_id=%s AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id,))
+def active_leads(user_id):
+    return execute_query("SELECT * FROM leads WHERE user_id=%s AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id,))
 
-def get_lost_leads(user_id):
-    return run_query("SELECT * FROM leads WHERE user_id=%s AND status IN ('lost','closed') ORDER BY updated DESC LIMIT 30", (user_id,))
+def closed_leads(user_id):
+    return execute_query("SELECT * FROM leads WHERE user_id=%s AND status IN ('lost','closed') ORDER BY updated DESC LIMIT 30", (user_id,))
 
-# ── SIMPLE WORKING PAGE ──
-PAGE = """<!DOCTYPE html>
+HTML_PAGE = """<!DOCTYPE html>
 <html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>
 <title>Follow-Up OS</title>
 <style>
@@ -128,23 +127,27 @@ document.getElementById('l_date').value=new Date().toISOString().split('T')[0];
 loadSummary();
 </script></body></html>"""
 
-@app.get("/", response_class=HTMLResponse)
-async def home(): return PAGE
+LOGIN_HTML = """<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Login</title><style>:root{--bg:#06060e;--surface:#0c0c1a;--border:#1a1a35;--blue:#3b82f6}*{margin:0;padding:0}body{font-family:system-ui;background:var(--bg);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center}.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:100%;max-width:380px;text-align:center}h1{font-size:1.5rem;margin-bottom:4px}h1 span{color:var(--blue)}p{color:#7a7a90;font-size:.85rem;margin-bottom:24px}input{width:100%;background:var(--bg);border:1px solid var(--border);color:#fff;padding:12px;border-radius:10px;font-size:.9rem;margin-bottom:12px;outline:none}input:focus{border-color:var(--blue)}.btn{background:var(--blue);color:#fff;border:none;padding:13px;border-radius:10px;font-weight:700;cursor:pointer;width:100%}.error{color:#ef4444;font-size:.8rem;margin-bottom:12px}a{color:#7a7a90;font-size:.8rem;text-decoration:none;display:block;margin-top:12px}</style></head><body><div class='card'><h1><span>Follow-Up</span> OS</h1><p>Login to see your leads</p><div id='error' class='error'></div><form onsubmit='login(event)'><input type='email' id='email' placeholder='Email' required><input type='password' id='password' placeholder='Password' required><button class='btn'>Login</button></form><a href='/signup'>Create account</a></div><script>async function login(e){e.preventDefault();var r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value})});if(r.ok)location.href='/app';else{var d=await r.json();document.getElementById('error').textContent=d.error}}</script></body></html>"""
 
-@app.get("/app", response_class=HTMLResponse)
-async def app(): return PAGE
+SIGNUP_HTML = """<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Sign Up</title><style>:root{--bg:#06060e;--surface:#0c0c1a;--border:#1a1a35;--blue:#3b82f6}*{margin:0;padding:0}body{font-family:system-ui;background:var(--bg);color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center}.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:100%;max-width:380px;text-align:center}h1{font-size:1.5rem}h1 span{color:var(--blue)}p{color:#7a7a90;font-size:.85rem;margin-bottom:24px}input{width:100%;background:var(--bg);border:1px solid var(--border);color:#fff;padding:12px;border-radius:10px;font-size:.9rem;margin-bottom:12px;outline:none}input:focus{border-color:var(--blue)}.btn{background:var(--blue);color:#fff;border:none;padding:13px;border-radius:10px;font-weight:700;cursor:pointer;width:100%}.error{color:#ef4444;font-size:.8rem;margin-bottom:12px}a{color:#7a7a90;font-size:.8rem;text-decoration:none;display:block;margin-top:12px}</style></head><body><div class='card'><h1><span>Follow-Up</span> OS</h1><p>Create your free account</p><div id='error' class='error'></div><form onsubmit='signup(event)'><input type='email' id='email' placeholder='Email' required><input type='password' id='password' placeholder='Password (6+ chars)' minlength='6' required><button class='btn'>Create Account</button></form><a href='/login'>Already have an account?</a></div><script>async function signup(e){e.preventDefault();var r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value})});if(r.ok)location.href='/app';else{var d=await r.json();document.getElementById('error').textContent=d.error}}</script></body></html>"""
 
-@app.get("/api/public/cost-of-silence")
-async def cost_of_silence():
-    total = run_query("SELECT SUM(deal_value) FROM leads WHERE follow_up_date < CURRENT_DATE AND status NOT IN ('lost','closed')")
-    count = run_query("SELECT COUNT(*) FROM leads WHERE follow_up_date < CURRENT_DATE AND status NOT IN ('lost','closed')")
-    t = total[0]['sum'] if total and total[0]['sum'] else 0
-    c = count[0]['count'] if count else 0
-    return {"overdue_deals": c, "total_at_risk": int(t), "daily_loss_estimate": round(int(t)*0.02,2)}
+@app.get("/")
+@app.get("/app")
+async def main_page():
+    return HTMLResponse(HTML_PAGE)
+
+@app.get("/login")
+async def login_page(request: Request):
+    if fetch_user(request): return RedirectResponse("/app")
+    return HTMLResponse(LOGIN_HTML)
+
+@app.get("/signup")
+async def signup_page():
+    return HTMLResponse(SIGNUP_HTML)
 
 @app.get("/api/me")
 async def me(request: Request):
-    user = get_user(request)
+    user = fetch_user(request)
     if not user: return JSONResponse({"email": None})
     return {"id": user["id"], "email": user["email"], "streak": user.get("streak",0)}
 
@@ -156,8 +159,8 @@ async def signup(request: Request):
     if not email or len(password) < 6: return JSONResponse({"error": "Email and 6+ char password required"}, status_code=400)
     try:
         token = str(uuid.uuid4())
-        run_query("INSERT INTO users (email,password,token,created,last_login) VALUES (%s,%s,%s,%s,%s)", (email, hash_password(password), token, datetime.now().isoformat(), datetime.now().isoformat()))
-        run_query("UPDATE leads SET user_id=(SELECT id FROM users WHERE token=%s) WHERE user_id=0 AND session_id=%s", (token, request.cookies.get("session_id","")))
+        execute_query("INSERT INTO users (email,password,token,created,last_login) VALUES (%s,%s,%s,%s,%s)", (email, hash_pw(password), token, datetime.now().isoformat(), datetime.now().isoformat()))
+        execute_query("UPDATE leads SET user_id=(SELECT id FROM users WHERE token=%s) WHERE user_id=0 AND session_id=%s", (token, request.cookies.get("session_id","")))
         resp = JSONResponse({"ok": True})
         resp.set_cookie("token", token, httponly=True, max_age=86400*365)
         return resp
@@ -168,10 +171,10 @@ async def login(request: Request):
     data = await request.json()
     email = data.get("email","").strip().lower()
     password = data.get("password","").strip()
-    rows = run_query("SELECT * FROM users WHERE email=%s", (email,))
-    if not rows or not check_password(password, rows[0]["password"]): return JSONResponse({"error": "Invalid email or password"}, status_code=401)
+    rows = execute_query("SELECT * FROM users WHERE email=%s", (email,))
+    if not rows or not check_pw(password, rows[0]["password"]): return JSONResponse({"error": "Invalid email or password"}, status_code=401)
     token = str(uuid.uuid4())
-    run_query("UPDATE users SET token=%s, last_login=%s WHERE id=%s", (token, datetime.now().isoformat(), rows[0]["id"]))
+    execute_query("UPDATE users SET token=%s, last_login=%s WHERE id=%s", (token, datetime.now().isoformat(), rows[0]["id"]))
     resp = JSONResponse({"ok": True})
     resp.set_cookie("token", token, httponly=True, max_age=86400*365)
     return resp
@@ -182,55 +185,54 @@ async def logout():
 
 @app.get("/api/summary")
 async def summary(request: Request):
-    user = get_user(request); uid = user["id"] if user else 0
-    return {"today": len(get_today_leads(uid)), "overdue": len(get_overdue_leads(uid)), "active": len(get_active_leads(uid))}
+    user = fetch_user(request); uid = user["id"] if user else 0
+    return {"today": len(today_leads(uid)), "overdue": len(overdue_leads(uid)), "active": len(active_leads(uid))}
 
 @app.post("/api/leads")
 async def add_lead(request: Request):
-    user = get_user(request); uid = user["id"] if user else 0
+    user = fetch_user(request); uid = user["id"] if user else 0
     sid = request.cookies.get("session_id", "0")
     data = await request.json(); now = datetime.now().isoformat()
-    run_query("INSERT INTO leads (user_id,session_id,name,source,note,deal_value,status,follow_up_date,created,updated) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", (uid, sid, data.get("name",""), data.get("source",""), data.get("note",""), data.get("deal_value",0), data.get("status","warm"), data.get("follow_up_date",date.today().isoformat()), now, now))
+    execute_query("INSERT INTO leads (user_id,session_id,name,source,note,deal_value,status,follow_up_date,created,updated) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", (uid, sid, data.get("name",""), data.get("source",""), data.get("note",""), data.get("deal_value",0), data.get("status","warm"), data.get("follow_up_date",date.today().isoformat()), now, now))
     return {"ok": True}
 
 @app.get("/api/leads/today")
 async def today(request: Request):
-    user = get_user(request); return get_today_leads(user["id"] if user else 0)
+    user = fetch_user(request); return today_leads(user["id"] if user else 0)
 
 @app.get("/api/leads/active")
 async def active(request: Request):
-    user = get_user(request); return get_active_leads(user["id"] if user else 0)
+    user = fetch_user(request); return active_leads(user["id"] if user else 0)
 
 @app.get("/api/leads/lost")
 async def lost(request: Request):
-    user = get_user(request); return get_lost_leads(user["id"] if user else 0)
+    user = fetch_user(request); return closed_leads(user["id"] if user else 0)
 
 @app.put("/api/leads/{lead_id}")
 async def update_lead(lead_id: int, request: Request):
-    user = get_user(request); uid = user["id"] if user else 0
+    user = fetch_user(request); uid = user["id"] if user else 0
     data = await request.json(); now = datetime.now().isoformat()
     for key in ["status","follow_up_date","last_contacted"]:
-        if key in data: run_query(f"UPDATE leads SET {key}=%s, updated=%s WHERE id=%s AND user_id=%s", (data[key], now, lead_id, uid))
-    run_query("INSERT INTO history (lead_id,user_id,action,note,created) VALUES (%s,%s,%s,%s,%s)", (lead_id, uid, data.get("status","updated"), data.get("note",""), now))
+        if key in data: execute_query(f"UPDATE leads SET {key}=%s, updated=%s WHERE id=%s AND user_id=%s", (data[key], now, lead_id, uid))
     if data.get("status") == "closed" and uid > 0:
         today_str = date.today().isoformat()
-        rows = run_query("SELECT streak, last_streak_date FROM users WHERE id=%s", (uid,))
+        rows = execute_query("SELECT streak, last_streak_date FROM users WHERE id=%s", (uid,))
         if rows:
             r = rows[0]; last = r["last_streak_date"]
             if last == today_str: pass
-            elif last and (date.today() - date.fromisoformat(last)).days == 1: run_query("UPDATE users SET streak=streak+1, last_streak_date=%s WHERE id=%s", (today_str, uid))
-            else: run_query("UPDATE users SET streak=1, last_streak_date=%s WHERE id=%s", (today_str, uid))
+            elif last and (date.today() - date.fromisoformat(last)).days == 1: execute_query("UPDATE users SET streak=streak+1, last_streak_date=%s WHERE id=%s", (today_str, uid))
+            else: execute_query("UPDATE users SET streak=1, last_streak_date=%s WHERE id=%s", (today_str, uid))
     return {"ok": True}
 
 @app.get("/dashboard")
 async def dashboard_page(request: Request):
     if request.cookies.get("admin_token") != ADMIN_PASS:
         return HTMLResponse('<html><body style="background:#06060e;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh"><form method="post" action="/dashboard/login"><input name="password" type="password" placeholder="Admin password" style="padding:14px;background:#0c0c1a;border:1px solid #1a1a35;color:#fff;border-radius:14px"><button style="padding:14px 24px;background:#3b82f6;color:#fff;border:none;border-radius:14px;cursor:pointer;font-weight:600;margin-top:8px">Access</button></form></body></html>')
-    rows = run_query("SELECT id, email, created, last_login, streak FROM users ORDER BY last_login DESC")
-    html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dashboard</title><style>body{font-family:system-ui;background:#06060e;color:#d4d4d8;padding:40px}h1{color:#3b82f6}table{width:100%;border-collapse:collapse}th,td{padding:14px;text-align:left;border-bottom:1px solid #1a1a35}th{color:#3b82f6}.num{color:#22c55e;font-weight:700}</style></head><body><h1>Dashboard</h1><table><tr><th>Email</th><th>Leads</th><th>Signed Up</th><th>Last Login</th><th>Streak</th></tr>'
+    rows = execute_query("SELECT id, email, created, last_login, streak FROM users ORDER BY last_login DESC")
+    html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dashboard</title><style>body{font-family:system-ui;background:#06060e;color:#d4d4d8;padding:40px}h1{color:#3b82f6}table{width:100%;border-collapse:collapse}th,td{padding:14px;text-align:left;border-bottom:1px solid #1a1a35}th{color:#3b82f6}</style></head><body><h1>Dashboard</h1><table><tr><th>Email</th><th>Leads</th><th>Signed Up</th><th>Last Login</th></tr>'
     for u in (rows or []):
-        cnt = run_query("SELECT COUNT(*) FROM leads WHERE user_id=%s", (u["id"],))[0]["count"]
-        html += f"<tr><td>{u['email']}</td><td class='num'>{cnt}</td><td>{u['created'][:10] if u['created'] else '-'}</td><td>{u['last_login'][:16] if u['last_login'] else 'Never'}</td><td>{u.get('streak',0) or 0} days</td></tr>"
+        cnt = execute_query("SELECT COUNT(*) FROM leads WHERE user_id=%s", (u["id"],))[0]["count"]
+        html += f"<tr><td>{u['email']}</td><td>{cnt}</td><td>{u['created'][:10] if u['created'] else '-'}</td><td>{u['last_login'][:16] if u['last_login'] else 'Never'}</td></tr>"
     html += "</table></body></html>"
     return HTMLResponse(html)
 
