@@ -160,19 +160,35 @@ async def summary(request: Request):
     return {"today": len(get_leads_query(uid, sid, "today")), "overdue": len(get_leads_query(uid, sid, "overdue")), "active": len(get_leads_query(uid, sid, "active"))}
 
 @app.post("/api/leads")
-async def add_lead(request: Request):
+async def add_lead(request: Request, response: Response = None):
     user = fetch_user(request)
     uid = user["id"] if user else 0
-    sid = request.cookies.get("session_id", str(uuid.uuid4()))
+    
+    # Get or create session_id
+    sid = request.cookies.get("session_id")
+    if not sid:
+        sid = str(uuid.uuid4())
+    
     data = await request.json()
     now = datetime.now().isoformat()
+    
     conn = sqlite3.connect(str(DB))
-    conn.execute("INSERT INTO leads (user_id,session_id,name,source,note,deal_value,status,follow_up_date,created,updated) VALUES (?,?,?,?,?,?,?,?,?,?)", (uid, sid, data.get("name",""), data.get("source",""), data.get("note",""), data.get("deal_value",0), data.get("status","warm"), data.get("follow_up_date",date.today().isoformat()), now, now))
-    conn.commit(); conn.close()
-    resp = JSONResponse({"ok": True})
+    conn.execute(
+        "INSERT INTO leads (user_id,session_id,name,source,note,deal_value,status,follow_up_date,created,updated) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (uid, sid, data.get("name",""), data.get("source",""), data.get("note",""), 
+         data.get("deal_value",0), data.get("status","warm"), 
+         data.get("follow_up_date", date.today().isoformat()), now, now)
+    )
+    conn.commit()
+    conn.close()
+    
+    result = JSONResponse({"ok": True, "session": sid[:8]})
+    
+    # Set cookie if not already set
     if not request.cookies.get("session_id"):
-        resp.set_cookie("session_id", sid, httponly=True, max_age=86400*365)
-    return resp
+        result.set_cookie("session_id", sid, httponly=True, max_age=86400*365)
+    
+    return result
 
 @app.get("/api/leads/today")
 async def today(request: Request):
