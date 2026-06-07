@@ -12,10 +12,10 @@ DB = Path("followup.db")
 ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "followup2024")
 
 @app.middleware("http")
-async def add_session(request: Request, call_next):
+async def session_middleware(request: Request, call_next):
     response = await call_next(request)
     if not request.cookies.get("session_id") and not request.cookies.get("token"):
-        response.set_cookie("session_id", str(uuid.uuid4()), httponly=True, max_age=86400)
+        response.set_cookie("session_id", str(uuid.uuid4()), httponly=True, max_age=86400*365)
     return response
 
 def init_db():
@@ -50,19 +50,26 @@ def run_query(query, params=()):
     conn.commit(); conn.close()
     return []
 
-def get_today(user_id):
+def get_leads_query(user_id, session_id, status_filter):
     today = date.today().isoformat()
-    return run_query("SELECT * FROM leads WHERE user_id=? AND follow_up_date <= ? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id, today))
-
-def get_overdue(user_id):
-    today = date.today().isoformat()
-    return run_query("SELECT * FROM leads WHERE user_id=? AND follow_up_date < ? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id, today))
-
-def get_active(user_id):
-    return run_query("SELECT * FROM leads WHERE user_id=? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id,))
-
-def get_closed(user_id):
-    return run_query("SELECT * FROM leads WHERE user_id=? AND status IN ('lost','closed') ORDER BY updated DESC LIMIT 30", (user_id,))
+    if user_id > 0:
+        if status_filter == "today":
+            return run_query("SELECT * FROM leads WHERE user_id=? AND follow_up_date <= ? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id, today))
+        elif status_filter == "overdue":
+            return run_query("SELECT * FROM leads WHERE user_id=? AND follow_up_date < ? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id, today))
+        elif status_filter == "active":
+            return run_query("SELECT * FROM leads WHERE user_id=? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (user_id,))
+        else:
+            return run_query("SELECT * FROM leads WHERE user_id=? AND status IN ('lost','closed') ORDER BY updated DESC LIMIT 30", (user_id,))
+    else:
+        if status_filter == "today":
+            return run_query("SELECT * FROM leads WHERE user_id=0 AND session_id=? AND follow_up_date <= ? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (session_id, today))
+        elif status_filter == "overdue":
+            return run_query("SELECT * FROM leads WHERE user_id=0 AND session_id=? AND follow_up_date < ? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (session_id, today))
+        elif status_filter == "active":
+            return run_query("SELECT * FROM leads WHERE user_id=0 AND session_id=? AND status NOT IN ('lost','closed') ORDER BY follow_up_date ASC", (session_id,))
+        else:
+            return run_query("SELECT * FROM leads WHERE user_id=0 AND session_id=? AND status IN ('lost','closed') ORDER BY updated DESC LIMIT 30", (session_id,))
 
 HTML = """
 <!DOCTYPE html>
@@ -147,38 +154,58 @@ async def logout():
 
 @app.get("/api/summary")
 async def summary(request: Request):
-    user = fetch_user(request); uid = user["id"] if user else 0
-    return {"today": len(get_today(uid)), "overdue": len(get_overdue(uid)), "active": len(get_active(uid))}
+    user = fetch_user(request)
+    uid = user["id"] if user else 0
+    sid = request.cookies.get("session_id","0")
+    return {"today": len(get_leads_query(uid, sid, "today")), "overdue": len(get_leads_query(uid, sid, "overdue")), "active": len(get_leads_query(uid, sid, "active"))}
 
 @app.post("/api/leads")
 async def add_lead(request: Request):
-    user = fetch_user(request); uid = user["id"] if user else 0
-    sid = request.cookies.get("session_id", "0")
-    data = await request.json(); now = datetime.now().isoformat()
+    user = fetch_user(request)
+    uid = user["id"] if user else 0
+    sid = request.cookies.get("session_id", str(uuid.uuid4()))
+    data = await request.json()
+    now = datetime.now().isoformat()
     conn = sqlite3.connect(str(DB))
     conn.execute("INSERT INTO leads (user_id,session_id,name,source,note,deal_value,status,follow_up_date,created,updated) VALUES (?,?,?,?,?,?,?,?,?,?)", (uid, sid, data.get("name",""), data.get("source",""), data.get("note",""), data.get("deal_value",0), data.get("status","warm"), data.get("follow_up_date",date.today().isoformat()), now, now))
     conn.commit(); conn.close()
-    return {"ok": True}
+    resp = JSONResponse({"ok": True})
+    if not request.cookies.get("session_id"):
+        resp.set_cookie("session_id", sid, httponly=True, max_age=86400*365)
+    return resp
 
 @app.get("/api/leads/today")
 async def today(request: Request):
-    user = fetch_user(request); return get_today(user["id"] if user else 0)
+    user = fetch_user(request)
+    return get_leads_query(user["id"] if user else 0, request.cookies.get("session_id","0"), "today")
 
 @app.get("/api/leads/active")
 async def active(request: Request):
-    user = fetch_user(request); return get_active(user["id"] if user else 0)
+    user = fetch_user(request)
+    return get_leads_query(user["id"] if user else 0, request.cookies.get("session_id","0"), "active")
 
 @app.get("/api/leads/lost")
 async def lost(request: Request):
-    user = fetch_user(request); return get_closed(user["id"] if user else 0)
+    user = fetch_user(request)
+    return get_leads_query(user["id"] if user else 0, request.cookies.get("session_id","0"), "closed")
 
 @app.put("/api/leads/{lead_id}")
 async def update_lead(lead_id: int, request: Request):
-    user = fetch_user(request); uid = user["id"] if user else 0
-    data = await request.json(); now = datetime.now().isoformat()
+    user = fetch_user(request)
+    uid = user["id"] if user else 0
+    sid = request.cookies.get("session_id","0")
+    data = await request.json()
+    now = datetime.now().isoformat()
     conn = sqlite3.connect(str(DB))
-    for key in ["status","follow_up_date","last_contacted"]:
-        if key in data: conn.execute(f"UPDATE leads SET {key}=?, updated=? WHERE id=? AND user_id=?", (data[key], now, lead_id, uid))
+    if uid > 0:
+        conn.execute(f"UPDATE leads SET status=?, updated=? WHERE id=? AND user_id=?", (data.get("status","warm"), now, lead_id, uid))
+    else:
+        conn.execute(f"UPDATE leads SET status=?, updated=? WHERE id=? AND session_id=?", (data.get("status","warm"), now, lead_id, sid))
+    if "follow_up_date" in data:
+        if uid > 0:
+            conn.execute("UPDATE leads SET follow_up_date=?, updated=? WHERE id=? AND user_id=?", (data["follow_up_date"], now, lead_id, uid))
+        else:
+            conn.execute("UPDATE leads SET follow_up_date=?, updated=? WHERE id=? AND session_id=?", (data["follow_up_date"], now, lead_id, sid))
     conn.commit(); conn.close()
     return {"ok": True}
 
