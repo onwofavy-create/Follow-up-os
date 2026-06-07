@@ -15,7 +15,7 @@ ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "followup2024")
 async def session_middleware(request: Request, call_next):
     response = await call_next(request)
     if not request.cookies.get("session_id") and not request.cookies.get("token"):
-        response.set_cookie("session_id", str(uuid.uuid4()), httponly=True, max_age=86400*365)
+        response.set_cookie("session_id", str(uuid.uuid4()), httponly=True)
     return response
 
 def init_db():
@@ -186,7 +186,7 @@ async def add_lead(request: Request, response: Response = None):
     
     # Set cookie if not already set
     if not request.cookies.get("session_id"):
-        result.set_cookie("session_id", sid, httponly=True, max_age=86400*365)
+       result.set_cookie("session_id", sid, httponly=True)
     
     return result
 
